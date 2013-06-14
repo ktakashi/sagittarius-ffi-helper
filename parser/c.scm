@@ -124,9 +124,53 @@
 				    (cadr token2)))))
 		  ;; one letter operator must have the same name and kind
 		  (else (values (car token) (car token))))))
+	(define (read-number first second p)
+	  (define (read-int acc p set radix)
+	    (read-char p)			; discards the second letter
+	    (let loop ((acc acc) (c (peek-char p)))
+	      (if (char-set-contains? set c)
+		  (loop (cons c acc) (begin (read-char p) (peek-char p)))
+		  (string->number (list->string (reverse! acc)) radix))))
+	  (define IS (string->char-set "uUlL"))
+	  (define FS (string->char-set "fFlL"))
+	  (define (read-is p int)
+	    (let loop ((c (peek-char p)))
+	      (if (char-set-contains? IS c)
+		  (loop (begin (read-char p) (peek-char p)))
+		  int)))
+	  (define (read-hex p)
+	    (let ((int (read-int '() p char-set:hex-digit 16)))
+	      (read-is p int)))
+
+	  (define (read-octet first p)
+	    (let ((int (read-int (list first) p char-set:digit 8)))
+	      (read-is p int)))
+	  (define (read-float p)
+	    ;; for now
+	    ;; FIXME this is absolutely wrong
+	    (let ((int (read-int '() p char-set:digit 10)))
+	      (string->number (string-append "." (number->string int)) 10)))
+
+	  (cond ((char=? first #\0)
+		 (cond ((char=? second #\x) (read-hex p))
+		       ((char-set-contains? char-set:digit second)
+			(read-octet second p))
+		       ;; one letter
+		       (else (string->number (string first) 10))))
+		((char-set-contains? char-set:digit second)
+		 (let ((int (read-int (list second first) p char-set:digit 10))
+		       (c (peek-char p)))
+		   (cond ((char=? c #\.)
+			  (let ((f (read-float p)))
+			    (+ int f)))
+			 ((char-set-contains? IS c)
+			  (read-is p int))
+			 (else int))))
+		(else (string->number (string first) 10))))
 	(define (position-update token kind old-pos)
-	  (set! pos (update-parse-position pos token))
-	  (values old-pos (cons kind token)))
+	    (set! pos (update-parse-position pos token))
+	    ;;(format #t "~a:~a~%" token kind)
+	    (values old-pos (cons kind token)))
 	(let loop ()
 	  (if ateof
 	      (values pos #f)
@@ -142,6 +186,10 @@
 		       ;; one line comment skip
 		       (get-line p)
 		       (loop))
+		      ((char-set-contains? char-set:digit x)
+		       ;; read number
+		       (let ((n (read-number x y p)))
+			 (position-update n 'constant pos)))
 		      ((and (char=? x #\/) (char=? y #\*))
 		       (read-char p)
 		       ;; skip until it hits */

@@ -10,9 +10,9 @@
 
 (define sample-c
 "
+int Ack(int M, int N) { return(M ? (Ack(M-1,N ? Ack(M,(N-1)) : 1)) : N+1); }
 int main(int argc, char **argv) {
- i <<= 1, j = 2;
- printf(\"hoge\");
+int i = 0x11;
 }
 
 ")
@@ -25,6 +25,6 @@ int main(int argc, char **argv) {
 	(call-with-input-file file
 	  (lambda (p) (parser p) (display 'done)))
 	(newline))
-      ;;(pp (parser (open-string-input-port sample-c)))
+      (pp (parser (open-string-input-port sample-c)))
       (for-each (cut do-parse <>) files)
       )))
