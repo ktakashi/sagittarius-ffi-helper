@@ -10,10 +10,11 @@
 
 (define sample-c
 "
-int Ack(int M, int N) { return(M ? (Ack(M-1,N ? Ack(M,(N-1)) : 1)) : N+1); }
-int main(int argc, char **argv) {
+//int Ack(int M, int N) { return(M ? (Ack(M-1,N ? Ack(M,(N-1)) : 1)) : N+1); }
+int main(int argc, char **argv) <%
 int i = 0x11;
-}
+if (i < 0) i <<= 1;
+%>
 
 ")
 

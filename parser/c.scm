@@ -51,9 +51,11 @@
 			    (#\~ tilde) (#\- minus) (#\+ plus)
 			    (#\* star) (#\/ slash) (#\% percent)
 			    (#\< lt-op) (#\> gt-op) (#\^ xor)
-			    (#\| or)))
+			    (#\| or)
+			    (#\# hash)))
 
   (define-constant token2 '((assign (#\= eq-op))
+			    (colon (#\: #\]))
 			    (dot    :dot) ;; special treat
 			    (addrof (#\= and-assign) (#\& and-op))
 			    (bang (#\= ne-op))
@@ -61,20 +63,23 @@
 			    (plus (#\= add-assign) (#\+ inc-op))
 			    (star (#\= mul-assign))
 			    (slash (#\= div-assign))
-			    (percent (#\= mod-assign))
-			    (lt-op (#\< left-op)  (#\= le-op))
+			    (percent (#\= mod-assign) (#\> #\}))
+			    (lt-op (#\< left-op)  (#\= le-op)
+				   (#\% #\{) (#\: #\]))
 			    (gt-op (#\> right-op) (#\= ge-op))
 			    (xor   (#\= xor-assign))
-			    (or (#\= or-assign) (#\| or-op))))
+			    (or (#\= or-assign) (#\| or-op))
+			    (hash (#\# hash-hash))))
 
   (define-constant token3 '((left-op (#\= left-assign)) 
 			    (right-op (#\= right-assign))))
 
   (define-constant keywords '(auto break case char const continue default do
-			      double else enum extern float for goto if int
-			      long register return short signed sizeof static
-			      struct switch typedef union unsigned void 
-			      volatile while))
+			      double else enum extern float for goto if inline 
+			      int long register restrict return short signed
+			      sizeof static struct switch typedef union
+			      unsigned void volatile while _Bool _Complex
+			      _Imaginary))
 
   ;; TODO generator looses position information
   ;; when handling comment.
@@ -86,8 +91,7 @@
 	(define (lookup-keyword id default)
 	  (cond ((memv id keywords) => car)
 		(else default)))
-
-  
+ 
 	(define (read-literal p delm)
 	  (let loop ((r '()) (c (read-char p)))
 	    (cond ((eof-object? c)
@@ -169,7 +173,6 @@
 		(else (string->number (string first) 10))))
 	(define (position-update token kind old-pos)
 	    (set! pos (update-parse-position pos token))
-	    ;;(format #t "~a:~a~%" token kind)
 	    (values old-pos (cons kind token)))
 	(let loop ()
 	  (if ateof
@@ -297,65 +300,65 @@
 
      (additive-expression 
       ((e <- multiplicative-expression e* <- additive-expression*)
-       (if (null? e*) e (list e e*))))
-     (additive-expression* (('#\+ e <- additive-expression) (cons '+ e))
-			   (('#\- e <- additive-expression) (cons '- e))
+       (if (null? e*) e (cons e e*))))
+     (additive-expression* (('#\+ e <- additive-expression) (list '+ e))
+			   (('#\- e <- additive-expression) (list '- e))
 			   (() '()))
 
      (shift-expression ((e <- additive-expression e* <- shift-expression*)
-			(if (null? e*) e (list e e*))))
-     (shift-expression* ((o <- 'left-op e <- shift-expression) (cons o e))
-			((o <- 'right-op e <- shift-expression) (cons o e))
+			(if (null? e*) e (cons e e*))))
+     (shift-expression* ((o <- 'left-op e <- shift-expression) (list o e))
+			((o <- 'right-op e <- shift-expression) (list o e))
 			(() '()))
 
      (relational-expression
       ((e <- shift-expression e* <- relational-expression*)
-       (if (null? e*) e (list e e*))))
+       (if (null? e*) e (cons e e*))))
      (relational-expression* 
-      (('#\< e <- relational-expression) (cons '< e))
-      (('#\> e <- relational-expression) (cons '> e))
-      ((o <- 'le-op e <- relational-expression) (cons o e))
-      ((o <- 'ge-op e <- relational-expression) (cons o e))
+      (('#\< e <- relational-expression) (list '< e))
+      (('#\> e <- relational-expression) (list '> e))
+      ((o <- 'le-op e <- relational-expression) (list o e))
+      ((o <- 'ge-op e <- relational-expression) (list o e))
       (() '()))
 
      (equality-expression
       ((e <- relational-expression e* <- equality-expression*)
-       (if (null? e*) e (list e e*))))
-     (equality-expression* ((o <- 'eq-op e <- equality-expression) (cons o e))
-			   ((o <- 'ne-op e <- equality-expression) (cons o e))
+       (if (null? e*) e (cons e e*))))
+     (equality-expression* ((o <- 'eq-op e <- equality-expression) (list o e))
+			   ((o <- 'ne-op e <- equality-expression) (list o e))
 			   (() '()))
 
      (and-expression ((e <- equality-expression e* <- and-expression*)
-		      (if (null? e*) e (list e e*))))
-     (and-expression* (('#\& e <- and-expression) (cons '& e))
+		      (if (null? e*) e (cons e e*))))
+     (and-expression* (('#\& e <- and-expression) (list '& e))
 		      (() '()))
 
      (exclusive-or-expression
       ((e <- and-expression e* <- exclusive-or-expression*)
-       (if (null? e*) e (list e e*))))
-     (exclusive-or-expression* (('#\^ e <- exclusive-or-expression) (cons '^ e))
+       (if (null? e*) e (cons e e*))))
+     (exclusive-or-expression* (('#\^ e <- exclusive-or-expression) (list '^ e))
 			       (() '()))
 
      (inclusive-or-expression
       ((e <- exclusive-or-expression e* <- inclusive-or-expression*) 
-       (if (null? e*) e (list e e*))))
+       (if (null? e*) e (cons e e*))))
      (inclusive-or-expression* 
-      (('#\| e <- inclusive-or-expression) (cons '\x7c; e
+      (('#\| e <- inclusive-or-expression) (list '\x7c; e
 						 ))
       (() '()))
 
      (logical-and-expression
       ((e <- inclusive-or-expression e* <- logical-and-expression*)
-       (if (null? e*) e (list e e*))))
+       (if (null? e*) e (cons e e*))))
      (logical-and-expression* 
-      ((o <- 'and-op e <- logical-and-expression) (cons o e))
+      ((o <- 'and-op e <- logical-and-expression) (list o e))
       (() '()))
 
      (logical-or-expression
       ((e <- logical-and-expression e* <- logical-or-expression*) 
-       (if (null? e*) e (list e e*))))
+       (if (null? e*) e (cons e e*))))
      (logical-or-expression* 
-      ((o <- 'or-op e <- logical-or-expression) (cons o e))
+      ((o <- 'or-op e <- logical-or-expression) (list o e))
       (() '()))
 
      (conditional-expression ((e1 <- logical-or-expression
