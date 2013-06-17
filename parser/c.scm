@@ -110,7 +110,7 @@
 		   (read-char p)
 		   (let ((y (read-char p)))
 		     (if (char=? y #\.)
-			 (values '... 'ellipsis)
+			 (values '... '...)
 			 (error 'resolve-operator 
 				(format "invalid lexical syntax ..~s" y)))))
 		  ((assv x alist)
@@ -247,8 +247,6 @@
 
      (primary-expression ((id <- 'identifier) id)
 			 ((c  <- 'constant) c)
-			 ;; we don't return #\"
-			 ;;(('#\" s  <- 'string-literal '#\") s)
 			 ((s  <- 'string-literal) s)
 			 (('#\( e <- expression '#\)) e))
 
@@ -263,6 +261,11 @@
       ((o <- 'inc-op e* <- postfix-expression*) (cons o e*))
       ((o <- 'dec-op e* <- postfix-expression*) (cons o e*))
       (('ptr-op id <- 'identifier e* <- postfix-expression*) (cons id e*))
+      ;; do we need this?
+      (('#\( t <- type-name '#\) '#\{ i* <- initializer-list '#\})
+       (cons t i*))
+      (('#\( t <- type-name '#\) '#\{ i* <- initializer-list '#\, '#\})
+       (cons t i*))
       (() '()))
 
      (argument-expression-list
@@ -404,6 +407,7 @@
        (cons st ds))
       ((t <- type-specifier ds <- declaration-specifiers) (cons t ds))
       ((t <- type-qualifier ds <- declaration-specifiers) (cons t ds))
+      ((fs <- function-specifier ds <- declaration-specifiers) (cons fs ds))
       (() '()))
      
      (init-declarator-list ((i <- init-declarator i* <- init-declarator-list*)
@@ -430,10 +434,12 @@
 		     ((t <- 'double) t)
 		     ((t <- 'signed) t)
 		     ((t <- 'unsigned) t)
+		     ((t <- '_Bool) t)
+		     ((t <- '_Complex) t)
 		     ((st <- struct-or-union-specifier) st)
 		     ((e <- enum-specifier) e)
 		     ;; TODO TYPE_NAME for typedef or so
-		     ;((tn <- type-name) tn)
+		     ;((tn <- typedef-name) tn)
 		     )
 
      (struct-or-union-specifier ((st <- struct-or-union
@@ -454,7 +460,7 @@
       (() '()))
 
      (struct-declaration
-      ((q <- specifier-qualifier-list decl <- struct-declarator-list)
+      ((q <- specifier-qualifier-list decl <- struct-declarator-list '#\;)
        (cons q decl)))
 
      (specifier-qualifier-list
@@ -483,11 +489,14 @@
 		       (() '()))
 
      (enumerator 
-      ((id <- 'identifier) id)
-      ((id <- 'identifier '#\= e <- constant-expression) (cons id e)))
+      ((id <- 'identifier '#\= e <- constant-expression) (cons id e))
+      ((id <- 'identifier) id))
 
      (type-qualifier ((c <- 'const) c)
+		     ((r <- 'restrict) r)
 		     ((v <- 'volatile) v))
+
+     (function-specifier ((i <- 'inline) i))
 
      (declarator ((p <- pointer dd <- direct-declarator) (cons p dd))
 		 ((dd <- direct-declarator) (cons #f dd)))
@@ -496,32 +505,42 @@
 			 (cons id d*))
 			(('#\( d <- declarator '#\) d* <- direct-declarator*)
 			 (cons d d*)))
-     (direct-declarator* (('#\[ c <- constant-expression '#\]) c)
-			 (('#\[ '#\]) '())
-			 (('#\( p <- parameter-type-list '#\)) p)
-			 (('#\( i <- identifier-list '#\)) i)
-			 (('#\( '#\)) '())
-			 (() '()))
+     (direct-declarator* 
+      (('#\[ t <- type-qualifier-list e <- assignment-expression '#\])
+       (list t e))
+      ;; static type
+      (('#\[ 'static t <- type-qualifier-list e <- assignment-expression '#\])
+       (list 'static t e))
+      (('#\[ t <- type-qualifier-list 'static e <- assignment-expression '#\])
+       (list t 'static e))
+      ;; ??
+      (('#\[ t <- type-qualifier-list '#\* '#\]) (list t '*))
+      ;; since C99 direct declarator doesn't have to be
+      ;; constant 
+      ;;(('#\[ c <- constant-expression '#\]) c)
+      (('#\[ '#\]) '())
+      (('#\( p <- parameter-type-list '#\)) p)
+      (('#\( i <- identifier-list '#\)) i)
+      (('#\( '#\)) '())
+      (() '()))
 
      (pointer (('#\* tq* <- type-qualifier-list p <- pointer)
 	       (if (null? tq*)
 		   (cons 'pointer p)
 		   (cons* 'pointer tq* p)))
 	      (('#\* tq* <- type-qualifier-list) (cons 'pointer tq*))
-	      (('#\* p <- pointer) (list 'pointer p))
-	      (('#\*) (list 'pointer)))
+	      )
 
      ;; TODO correct?
      (type-qualifier-list ((t <- type-qualifier t* <- type-qualifier-list)
 			   (if (null? t*) t (cons t t*)))
 			  (() '()))
 
-     (parameter-type-list ((ps <- parameter-list '#\, e <- 'ellipsis)
-			   (cons ps e))
+     (parameter-type-list ((ps <- parameter-list '#\, e <- '...) (cons ps e))
 			  ((ps <- parameter-list) ps))
      (parameter-list ((p <- parameter-declaration p* <- parameter-list*)
-		      (if (null? p*) p (cons p p*))))
-     (parameter-list* (('#\, p <- parameter-list) (list p))
+		      (cons p p*)))
+     (parameter-list* (('#\, p <- parameter-list) p)
 		      (() '()))
      
      (parameter-declaration
@@ -541,26 +560,52 @@
      (abstract-declarator
       ((p <- pointer d <- direct-abstract-declarator) (cons p d))
       ((p <- pointer) p)
-      ((d <- direct-abstract-declarator) d))
+      #;((d <- direct-abstract-declarator) d)
+      )
 
      ;; TODO correct?
      (direct-abstract-declarator 
       (('#\( a <- abstract-declarator '#\)) a)
       (('#\[ '#\] d <- direct-abstract-declarator) d)
-      (('#\[ e <- constant-expression '#\] d <- direct-abstract-declarator)
+      (('#\[ t <- type-qualifier-list e <- argument-expression '#\]
+	d <- direct-abstract-declarator)
+       (list (cons t e) d))
+      ;; static
+      (('#\[ 'static t <- type-qualifier-list e <- argument-expression '#\]
+	d <- direct-abstract-declarator)
+       (list (cons* 'static t e) d))
+      (('#\[ t <- type-qualifier-list 'static e <- argument-expression '#\]
+	d <- direct-abstract-declarator)
+       (list (cons* t 'static e) d))
+      (('#\[ '#\* '#\] d <- direct-abstract-declarator)
+       (list (list '*) d))
+      #;(('#\[ e <- constant-expression '#\] d <- direct-abstract-declarator)
        (cons e d))
       (('#\( '#\) d <- direct-abstract-declarator) d)
       (('#\( p <- parameter-type-list '#\) d <- direct-abstract-declarator)
-       (cons p d))
+       (list p d))
       (() '()))
 
      (initializer ((e <- assignment-expression) e)
 		  (('#\{ l <- initializer-list '#\}) l)
 		  (('#\{ l <- initializer-list '#\, '#\}) l))
 
-     (initializer-list ((i <- initializer i* <- initializer-list*) (cons i i*)))
-     (initializer-list* (('#\, i <- initializer) i)
-			(() '()))
+     (initializer-list
+      ((d <- designation i <- initializer i* <- initializer-list*) 
+       (cons (cons d i) i*))
+      ((i <- initializer i* <- initializer-list*) (cons i i*)))
+     (initializer-list* 
+      (('#\, d <- designation i <- initializer) (cons d i))
+      (('#\, i <- initializer) i)
+      (() '()))
+
+     (designation ((dl <- designation-list '#\=) dl))
+     (designation-list ((d <- designator dl <- designation-list '#\=)
+			(cons d dl))
+		       (() '()))
+
+     (designator (('#\[ e <- constant-expression '#\]) e)
+		 (('#\. id <- 'identifier) id))
 
      (statement ((s <- labeled-statement) s)
 		((s <- compound-statement) s)
@@ -574,21 +619,13 @@
       ((c <- 'case e <- constant-expression '#\: s <- statement) (list c e s))
       ((d <- 'default '#\: s <- statement) (list d s)))
 
-     (compound-statement
-      ;; well both can accept empty anyway
-      ;;(('#\{ '#\}) '())
-      ;;(('#\{ s* <- statement-list '#\}) s*)
-      ;;(('#\{ d* <- declaration-list '#\}) d*)
-      (('#\{ d* <- declaration-list s* <- statement-list '#\}) 
-       (list (list :declaration d*) (list :statement s*))))
+     (compound-statement (('#\{ bi* <- block-item-list '#\}) bi*))
+     
+     (block-item-list ((bi <- block-item bi* <- block-item-list) (cons bi bi*))
+		      (() '()))
 
-     (declaration-list ((d <- declaration d* <- declaration-list) 
-			(if (null? d*) d (list d d*)))
-		       (() '()))
-
-     (statement-list ((s <- statement s* <- statement-list) 
-		      (if (null? s*) s (list s s*)))
-		     (() '()))
+     (block-item ((d <- declaration) (list :declaration d))
+		 ((s <- statement) (list :statement s)))
 
      (expression-statement ((e <- expression '#\;) e)
 			   (('#\;) '()))
@@ -605,15 +642,19 @@
       ((d <- 'do s <- statement w <- while '#\( e <- expression '#\))
        (list d s w e))
       ((f <- 'for 
-	'#\( es1 <- expression-statement es2 <- expression-statement '#\) 
+	'#\( d <- declaration e1 <- %expression* '#\; e2 <- %expression* '#\) 
 	s <- statement)
-       (list f es1 es2 s))
+       (list f d e1 e2 s))
       ((f <- 'for
-	'#\( es1 <- expression-statement
-	     es2 <- expression-statement
-	     e <- expression '#\)
+	'#\( e1 <- %expression* '#\;
+	     e2 <- %expression* '#\;
+	     e3 <- %expression* '#\)
 	s <- statement)
-       (list f es1 es2 e s)))
+       (list f e1 e2 e3 s)))
+
+     ;; helper
+     (%expression* ((e <- expression e* <- %expression*) (cons e e*))
+		   (() '()))
 
      (jump-statement ((g <- 'goto id <- 'identifier '#\;) (list g id))
 		     ((c <- 'continue '#\;) c)
@@ -629,21 +670,22 @@
 
      (external-declaration ((fd <- function-definition) fd)
 			   ((dc <- declaration) dc))
+
+     ;; should we only use C99 or better support older one?
      (function-definition ((dspec <- declaration-specifiers
 			    decl <- declarator 
 			    args <- declaration-list ;; old type
 			    body <- compound-statement)
 			   (list :function dspec decl args body))
-			  ((dspec <- declaration-specifiers
-			    decl <- declarator
-			    body <- compound-statement)
-			   (list :function dspec decl '() body))
+			  ;; following is not valid on C99
 			  ((decl <- declarator
 			    args <- declaration-list ;; old type
 			    body <- compound-statement)
-			   (list :function #f decl args body))
-			  ((decl <- declarator body <- compound-statement)
-			   (list :function #f decl '() body)))
+			   (list :function #f decl args body)))
+
+     (declaration-list ((d <- declaration d* <- declaration-list) 
+			(if (null? d*) d (list d d*)))
+		       (() '()))
      ))
 
   (define (make-parser)
