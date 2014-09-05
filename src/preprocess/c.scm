@@ -45,6 +45,7 @@
 	    (srfi :39 parameters)
 	    (clos user)
 	    (text parse)
+	    (util file)
 	    (util hashtables)
 	    (packrat)
 	    (match)
@@ -248,6 +249,35 @@
     (let ((name (read-identifier in)))
       (hashtable-delete! (*macro-table*) name)
       #f))
+
+  (define-method handle-keyword ((t (eql :include)) in)
+    (define (warn file path)
+      ((*warning-handler*) (format "~a does not exist on ~a" file path))
+      #f)
+    (define (finish file)
+      (if (file-exists? file)
+	  (let-values (((dir base ext) (decompose-path file)))
+	    (parameterize ((*current-path* dir))
+	      (call-with-input-file file
+		(lambda (in)
+		  (call-with-string-output-port
+		   (lambda (out)
+		     (c-preprocess in out)))))))
+	  (warn file (*current-path*))))
+    (let ((c (skip-block-comment in)))
+      (cond ((char=? c #\") ;; local file
+	     (let* ((name (read-until in #\"))
+		    (file (build-path (*current-path*) name)))
+	       ))
+	    ((char=? c #\<)
+	     (let* ((name (read-until in #\>))
+		    (path (find (lambda (p)
+				  (let ((file (build-path p name)))
+				    (file-exists? file))) (*includes*))))
+	       (if path
+		   (finish (build-path path name))
+		   (warn name (*includes*)))))
+	    (else (error 'include "invalid #include directive")))))
 
   (define (read-preprocessor1 in out)
     (define (read-rec sout)

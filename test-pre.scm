@@ -28,12 +28,24 @@ int bar;
 #else
 # error \"ng\"
 #endif
+#include <stdio.h>
+#include <sample.h>
+
 extern char *message;
 
-bar(i,j);
-bar(k,
-    l);
 int foo[Bar];
+
+// from sample
+int main()
+{
+  bar(i,j);
+  bar(k,
+      l);
+
+  CALL(a, CONST_VAL);
+  return CONST_VAL;
+}
+
 ")
 
 (define (main args)
@@ -45,6 +57,7 @@ int foo[Bar];
 	  (lambda (p) (parser p (current-output-port)) (display 'done)))
 	(newline))
       (*current-path* ".")
+      (*includes* '("test_files"))
       (pp (parser (open-string-input-port sample-c) (current-output-port)))
       ;;(for-each (cut do-parse <>) files)
       )))

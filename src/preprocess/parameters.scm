@@ -34,7 +34,7 @@
 	    *warning-handler*)
     (import (rnrs) (srfi :39 parameters))
   (define *current-path* (make-parameter #f))
-  (define *includes*     (make-parameter #f))
+  (define *includes*     (make-parameter '()))
   (define *warning-handler* 
     (make-parameter 
      (lambda (msg)
