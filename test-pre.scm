@@ -10,12 +10,18 @@
 
 (define sample-c
 "
-#if ((defined(BAR) || HOGE >= 0) && !hoge)
+#define Bar 0
+#if Bar
 # /* hoge */ define FOO 0x777
 # define bar(a , b) \\
     do {            \\
     } while (0)
+# ifdef FOO
 int foo;
+# endif
+# ifndef FOO
+int bar;
+# endif
 # line 1 \"hoge\"
 #else
 # error \"ng\"
