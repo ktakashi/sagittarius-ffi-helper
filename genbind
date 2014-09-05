@@ -1,0 +1,38 @@
+#!/bin/env sagittarius
+;; -*- mode:scheme; coding:utf-8; -*-
+
+(import (rnrs)
+	(srfi :26)
+	(srfi :39)
+	(util file)
+	(preprocess)
+	(sagittarius control)
+	(parser)
+	(getopt)
+	(pp))
+
+(define preprocessor (make-preprocessor 'c))
+(define parser (make-parser 'c))
+
+
+(define (main args)
+  (with-args (cdr args)
+      ((includes (#\I "include") * '())
+       . rest)
+    (when (null? rest) (usage))
+    (let-values (((dir base ext) (decompose-path (car rest)))
+		 ((out path) (make-temporary-file)))
+      (let ((out (transcoded-port out (native-transcoder))))
+	(parameterize ((*includes* includes)
+		       (*current-path* dir))
+	  (unwind-protect
+	      (begin
+		(let ((macros (call-with-input-file (car rest)
+				(cut preprocessor <> out))))
+		  (flush-output-port out)
+		  (pp (file->string-list path))
+		  (let ((defs (call-with-input-file path (cut parser <>))))
+		    (pp defs))))
+	    (close-output-port out)
+	    (delete-file path)
+	    ))))))

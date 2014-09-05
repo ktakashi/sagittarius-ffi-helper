@@ -29,7 +29,8 @@ int bar;
 # error \"ng\"
 #endif
 #include <stdio.h>
-#include <sample.h>
+
+#include \"sample.h\"
 
 extern char *message;
 
@@ -56,8 +57,8 @@ int main()
 	(call-with-input-file file
 	  (lambda (p) (parser p (current-output-port)) (display 'done)))
 	(newline))
-      (*current-path* ".")
+      (*current-path* "test_files")
       (*includes* '("test_files"))
       (pp (parser (open-string-input-port sample-c) (current-output-port)))
-      (for-each (cut do-parse <>) files)
+      ;;(for-each (cut do-parse <>) files)
       )))
