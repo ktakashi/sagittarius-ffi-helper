@@ -170,6 +170,10 @@
 	     (list :var-define var #f))
 	    ((char=? nc #\()
 	     (read-next in var (read-until in #\)) #f))
+	    ((and (char=? nc #\\) (char=? #\linefeed (peek-char in)))
+	     (get-char in)
+	     ;; don't use number in multiline...
+	     (list :var-define var #t (read-token-string in)))
 	    (else (read-next in var #t nc)))))
 
   (define-method handle-keyword ((t (eql :error)) in)
@@ -369,7 +373,12 @@
 	 (hashtable-set! (*macro-table*) (cadr pp) (make-macro (cddr pp))))
 	((:var-define)
 	 (if (caddr pp)
-	     (hashtable-set! (*macro-table*) (cadr pp) (cadddr pp))
+	     (let ((v (cadddr pp)))
+	       ;; could be an redefinition of macro
+	       (if (and (string? v) (hashtable-contains? (*macro-table*) v))
+		   (hashtable-set! (*macro-table*) (cadr pp)
+				   (hashtable-ref (*macro-table*) v))
+		   (hashtable-set! (*macro-table*) (cadr pp) v)))
 	     (hashtable-set! (*macro-table*) (cadr pp) #f)))))
     ;; for now it's line oriented...
     

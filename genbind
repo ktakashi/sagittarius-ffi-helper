@@ -18,6 +18,11 @@
 (define preprocessor (make-preprocessor 'c))
 (define parser (make-parser 'c))
 
+;; MSVC supports weird annotation
+;; and some header is smart enough to detect own platform so that
+;; sometime workaround for this won't work. so define it.
+;; (define )
+
 
 (define (main args)
   (define (parse-def define)
@@ -50,7 +55,8 @@
 		  (flush-output-port out)
 		  (parameterize ((c:*typedefs* (map string->symbol types)))
 		    (let ((defs (call-with-input-file path (cut parser <>))))
-		      (pp defs)))))
+		      ;;(pp defs)
+		      ))))
 	    (close-output-port out)
 	    (if expand 
 		(rename-file path (string-append base "." ext))
