@@ -173,9 +173,9 @@
 	(cond ((eof-object? c)
 	       (let ((r (extract)))
 		 (if (string-null? r) c r)))
-	      ((char=? c #\linefeed) (put-char out c) (extract)) ;; stops at eol
+	      ((char=? c #\linefeed) (put-char sout c) (extract)) ;; stops at eol
 	      ((char-whitespace? c)
-	       (put-char out c) (loop (get-char in) appear?))
+	       (put-char sout c) (loop (get-char in) appear?))
 	      ((char=? c #\#) 
 	       (when appear? (error 'c-preprocessor "stray '#' in program"))
 	       (read-rec sout))
@@ -185,14 +185,15 @@
 		 (cond ((char=? nc #\/) 
 			(get-line in) (loop (get-char in) appear?))
 		       ((char=? nc #\*) 
-			(when (handle-comment in) 
-			  (loop (get-char in) appear?))
-			#f)
+			(if (handle-comment in) 
+			    (loop (get-char in) appear?)
+			    (let ((r (extract)))
+			      (if (string-null? r) #f r))))
 		       (else
-			(put-char out c)
-			(put-char out nc)
+			(put-char sout c)
+			(put-char sout nc)
 			(loop (get-char in) #t)))))
-	      (else (put-char out c) (loop (get-char in) #t))))))
+	      (else (put-char sout c) (loop (get-char in) #t))))))
 
 
   ;; the crusial point of processing preprocessor is that
