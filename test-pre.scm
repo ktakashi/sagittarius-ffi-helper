@@ -10,14 +10,17 @@
 
 (define sample-c
 "
+#if ((defined(BAR) || HOGE >= 0) && !hoge)
 # /* hoge */ define FOO 0x777
-#define bar(a , b) \\
-  do {         \\
-  } while (0)
+# define bar(a , b) \\
+    do {            \\
+    } while (0)
 int foo;
-// #error \"ok\"
-#line 1 \"hoge\"
-
+# line 1 \"hoge\"
+#else
+# error \"ng\"
+#endif
+extern char *message;
 ")
 
 (define (main args)
@@ -30,5 +33,5 @@ int foo;
 	(newline))
       (*current-path* ".")
       (pp (parser (open-string-input-port sample-c) (current-output-port)))
-      (for-each (cut do-parse <>) files)
+      ;;(for-each (cut do-parse <>) files)
       )))

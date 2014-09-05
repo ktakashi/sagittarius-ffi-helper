@@ -32,7 +32,8 @@
 ;;   http://www.lysator.liu.se/c/ANSI-C-grammar-y.html
 ;;   http://www.lysator.liu.se/c/ANSI-C-grammar-l.html
 (library (parser c)
-    (export make-parser)
+    (export make-parser
+	    make-condition-parser)
     (import (rnrs)
 	    (sagittarius)
 	    (sagittarius control)
@@ -241,9 +242,13 @@
   (define identifier-set
     (char-set-union char-set:letter+digit (list->char-set '(#\_))))
 
+  (define condition-parser #f)
+
   (define parser
     (packrat-parser
-     translation-unit
+     (begin
+       (set! condition-parser conditional-expression)
+       translation-unit)
 
      (primary-expression ((id <- 'identifier) id)
 			 ((c  <- 'constant) c)
@@ -567,14 +572,14 @@
      (direct-abstract-declarator 
       (('#\( a <- abstract-declarator '#\)) a)
       (('#\[ '#\] d <- direct-abstract-declarator) d)
-      (('#\[ t <- type-qualifier-list e <- argument-expression '#\]
+      (('#\[ t <- type-qualifier-list e <- assignment-expression '#\]
 	d <- direct-abstract-declarator)
        (list (cons t e) d))
       ;; static
-      (('#\[ 'static t <- type-qualifier-list e <- argument-expression '#\]
+      (('#\[ 'static t <- type-qualifier-list e <- assignment-expression '#\]
 	d <- direct-abstract-declarator)
        (list (cons* 'static t e) d))
-      (('#\[ t <- type-qualifier-list 'static e <- argument-expression '#\]
+      (('#\[ t <- type-qualifier-list 'static e <- assignment-expression '#\]
 	d <- direct-abstract-declarator)
        (list (cons* t 'static e) d))
       (('#\[ '#\* '#\] d <- direct-abstract-declarator)
@@ -639,7 +644,7 @@
 
      (iteration-statement
       ((w <- 'while '#\( e <- expression '#\) s <- statement) (list w e s))
-      ((d <- 'do s <- statement w <- while '#\( e <- expression '#\))
+      ((d <- 'do s <- statement w <- 'while '#\( e <- expression '#\))
        (list d s w e))
       ((f <- 'for 
 	'#\( d <- declaration e1 <- %expression* '#\; e2 <- %expression* '#\) 
@@ -688,7 +693,7 @@
 		       (() '()))
      ))
 
-  (define (make-parser)
+  (define (%make-parser parser)
     (define (read-c-file p)
       (let ((result (parser (base-generator->results (generator p)))))
 	(if (parse-result-successful? result)
@@ -703,5 +708,8 @@
       (read-c-file (if (pair? maybe-port)
 		       (car maybe-port)
 		       (current-input-port)))))
+
+  (define (make-parser) (%make-parser parser))
+  (define (make-condition-parser) (%make-parser condition-parser))
 
 )
