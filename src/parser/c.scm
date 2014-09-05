@@ -33,12 +33,16 @@
 ;;   http://www.lysator.liu.se/c/ANSI-C-grammar-l.html
 (library (parser c)
     (export make-parser
-	    make-condition-parser)
+	    make-condition-parser
+	    *typedefs*)
     (import (rnrs)
 	    (sagittarius)
 	    (sagittarius control)
+	    (match)
 	    (packrat)
-	    (srfi :14 char-sets))
+	    (srfi :14 char-sets)
+	    (srfi :39 parameters)
+	    (pp))
 
   ;; operator table
   (define-constant token1 '((#\; semicolon) (#\? quest)
@@ -81,6 +85,8 @@
 			      sizeof static struct switch typedef union
 			      unsigned void volatile while _Bool _Complex
 			      _Imaginary))
+
+  (define *typedefs* (make-parameter '()))
 
   ;; TODO generator looses position information
   ;; when handling comment.
@@ -247,6 +253,12 @@
   (define parser
     (packrat-parser
      (begin
+       (define (typedef-name results)
+	 (let ((v (parse-results-token-value results)))
+	   (if (memq v (*typedefs*))
+	       (make-result v (parse-results-next results))
+	       (make-expected-result (parse-results-position results)
+				     'typedef-name))))
        (set! condition-parser conditional-expression)
        translation-unit)
 
@@ -404,11 +416,20 @@
 
      (declaration
       ((ds <- declaration-specifiers init <- init-declarator-list '#\;)
+       ;; store typedeffed names so that it can continue.
+       (when (and (pair? ds) (eq? (car ds) 'typedef))
+	 (match init
+	   ((((pointer? name) . rest))
+	    (*typedefs* (cons name (*typedefs*))))
+	   ;; FIXME
+	   (_ (display "unknown format: " (current-error-port))
+	      (display init (current-error-port)) 
+	      (newline (current-error-port)))))
        (list ds init))
       ((ds <- declaration-specifiers '#\;) (list ds #f)))
 
      (declaration-specifiers 
-      ((st <- storage-class-specifier ds <- declaration-specifiers) 
+      ((st <- storage-class-specifier ds <- declaration-specifiers)
        (cons st ds))
       ((t <- type-specifier ds <- declaration-specifiers) (cons t ds))
       ((t <- type-qualifier ds <- declaration-specifiers) (cons t ds))
@@ -444,7 +465,7 @@
 		     ((st <- struct-or-union-specifier) st)
 		     ((e <- enum-specifier) e)
 		     ;; TODO TYPE_NAME for typedef or so
-		     ;((tn <- typedef-name) tn)
+		     ((tn <- typedef-name) tn)
 		     )
 
      (struct-or-union-specifier ((st <- struct-or-union
@@ -705,9 +726,10 @@
 		       (expected ,(parse-error-expected e))
 		       (message ,(parse-error-messages e))))))))
     (lambda maybe-port 
-      (read-c-file (if (pair? maybe-port)
-		       (car maybe-port)
-		       (current-input-port)))))
+      (parameterize ((*typedefs* (*typedefs*)))
+	(read-c-file (if (pair? maybe-port)
+			 (car maybe-port)
+			 (current-input-port))))))
 
   (define (make-parser) (%make-parser parser))
   (define (make-condition-parser) (%make-parser condition-parser))

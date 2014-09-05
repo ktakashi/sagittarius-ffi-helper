@@ -1,13 +1,17 @@
 #!/bin/env sagittarius
 ;; -*- mode:scheme; coding:utf-8; -*-
 
+#!read-macro=sagittarius/regex
 (import (rnrs)
 	(srfi :26)
 	(srfi :39)
 	(util file)
-	(preprocess)
 	(sagittarius control)
+	(sagittarius regex)
 	(parser)
+	(preprocess)
+	(prefix (parser c) c:)
+	(prefix (preprocess c) c:)
 	(getopt)
 	(pp))
 
@@ -16,23 +20,36 @@
 
 
 (define (main args)
+  (define (parse-def define)
+    (cond ((#/(\w+?)=(.+)/ define) =>
+	   (lambda (m) (cons (m 1) (m 2))))
+	  (else (cons define ""))))
   (with-args (cdr args)
       ((includes (#\I "include") * '())
+       (defines  (#\D "define") * '())
+       (types    (#\t "typedefs") * '())
+       (expand   (#\E "expand") #f #f)
        . rest)
     (when (null? rest) (usage))
     (let-values (((dir base ext) (decompose-path (car rest)))
 		 ((out path) (make-temporary-file)))
       (let ((out (transcoded-port out (native-transcoder))))
 	(parameterize ((*includes* includes)
-		       (*current-path* dir))
+		       (*current-path* dir)
+		       
+		       (c:*definitions* (map parse-def defines)))
 	  (unwind-protect
 	      (begin
 		(let ((macros (call-with-input-file (car rest)
 				(cut preprocessor <> out))))
 		  (flush-output-port out)
-		  (pp (file->string-list path))
-		  (let ((defs (call-with-input-file path (cut parser <>))))
-		    (pp defs))))
+		  ;; (display (file->string path))
+		  ;;(c:*typedefs* '(SQL_BIGUINT_TYPE _SQLOLDCHAR FAR))
+		  (parameterize ((c:*typedefs* (map string->symbol types)))
+		    (let ((defs (call-with-input-file path (cut parser <>))))
+		      (pp defs)))))
 	    (close-output-port out)
-	    (delete-file path)
+	    (if expand 
+		(rename-file path (string-append base "." ext))
+		(delete-file path))
 	    ))))))
