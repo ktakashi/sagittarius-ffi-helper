@@ -20,7 +20,7 @@ for (int i = 0;; i++) puts(\"hoge\");
 ")
 
 (define (main args)
-  (let1 files (find-files "test_files" :pattern ".h$")
+  (let1 files (find-files "test_files" :pattern ".c$")
     (let1 parser (make-parser 'c)
       (define (do-parse file) 
 	(display file) (display '...)
