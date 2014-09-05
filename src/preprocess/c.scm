@@ -244,6 +244,11 @@
   (define-method handle-keyword ((t (eql :ifndef)) in)
     (handle-condition (string-append "! defined(" (read-identifier in) ")") in))
 
+  (define-method handle-keyword ((t (eql :undef)) in)
+    (let ((name (read-identifier in)))
+      (hashtable-delete! (*macro-table*) name)
+      #f))
+
   (define (read-preprocessor1 in out)
     (define (read-rec sout)
       ;; now we have fun part...
@@ -300,8 +305,7 @@
 	      (def   (cadr param&def)))
 	  (list param def)))
       (when (hashtable-contains? (*macro-table*) (cadr pp))
-	;; should we make this an error or just an warning?
-	(error 'define "multiple definition" pp))
+	((*warning-handler*) (format "multiple definition of ~s" (cadr pp))))
       (case (car pp)
 	((:define) 
 	 (hashtable-set! (*macro-table*) (cadr pp) (make-macro (cddr pp))))

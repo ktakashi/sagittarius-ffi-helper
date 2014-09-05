@@ -10,8 +10,9 @@
 
 (define sample-c
 "
-#define Bar 1
-#if Bar
+#define bar 1
+#if bar
+#undef bar
 # /* hoge */ define FOO 0x777
 # define bar(a , b) \\
     do {            \\

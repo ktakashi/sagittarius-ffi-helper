@@ -31,7 +31,8 @@
 (library (preprocess)
     (export make-preprocessor 
 	    *current-path*
-	    *includes*)
+	    *includes*
+	    *warning-handler*)
     (import (rnrs) (rnrs eval)
 	    (preprocess parameters))
 

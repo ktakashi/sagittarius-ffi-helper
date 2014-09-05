@@ -30,8 +30,14 @@
 
 (library (preprocess parameters)
     (export *current-path*
-	    *includes*)
+	    *includes*
+	    *warning-handler*)
     (import (rnrs) (srfi :39 parameters))
   (define *current-path* (make-parameter #f))
   (define *includes*     (make-parameter #f))
+  (define *warning-handler* 
+    (make-parameter 
+     (lambda (msg)
+       (display msg (current-error-port))
+       (newline (current-error-port)))))
 )
