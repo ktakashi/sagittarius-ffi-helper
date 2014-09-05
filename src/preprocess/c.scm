@@ -33,15 +33,21 @@
 ;; strip out preprocessor and comments
 ;; the result is close to gcc -E option
 #!read-macro=char-set
+#!read-macro=sagittarius/regex
 (library (preprocess c)
     (export make-preprocessor)
     (import (rnrs)
 	    (sagittarius)
+	    (sagittarius regex)
 	    (srfi :13 strings)
 	    (srfi :14 char-sets)
+	    (srfi :39 parameters)
 	    (clos user)
 	    (text parse)
+	    (util hashtables)
 	    (preprocess parameters))
+
+  (define *macro-table* (make-parameter #f))
 
   ;; grammar reference
   ;;  http://msdn.microsoft.com/en-us/library/2scxys89.aspx
@@ -87,26 +93,67 @@
 	     (put-char out c)
 	     (loop)))))))
 
+  ;; read all character until it hits linefeed
+  ;; '\' is an escape.
+  ;; gcc actually allows '\   \n' ('\' followed by spaces then linefeed)
+  ;; but we don't
   (define (read-token-string in)
-    ;; for now
-    (read-identifier in))
+    (skip-while (cs-pred *except-linefeed*) in)
+    (call-with-string-output-port
+     (lambda (out)
+       (let loop ()
+	 (let ((c (read-char in)))
+	   (cond ((eof-object? c) 
+		  (error 'read-token-string "unexpected EOF"))
+		 ((char=? c #\\)
+		  (let ((nc (read-char in)))
+		    (cond ((char=? nc #\return)
+			   (let ((nc2 (read-char in)))
+			     (unless (char=? nc2 #\linefeed)
+			       (put-char out nc2))
+			     (loop)))
+			  ((char=? nc #\linefeed) (loop))
+			  (else (put-char out c) (put-char out nc) (loop)))))
+		 ((or (char=? c #\return) (char=? c #\linefeed))
+		  (when (char=? c #\return) 
+		    (let ((nc (peek-char in)))
+		      (when (char=? nc #\linefeed) (get-char in)))))
+		 (else (put-char out c) (loop))))))))
+
+  (define (parse-c-number token)
+    (cond ((string-prefix? "0x" token)
+	       (string->number (string-copy token 2) 16))
+	      ((char=? #\0 (string-ref token 0))
+	       (string->number (string-copy token 1) 8))
+	      (else (string->number token))))
+  (define (maybe-c-number token)
+    (if (for-all (cs-pred #[0-9a-fx]) (string->list token))
+	(parse-c-number token)
+	token))
 
   (define-method handle-keyword ((t (eql :define)) in)
-    (define (read-next in var param)
-      (list (if param :define :var-define) var (read-token-string in)))
+    (define (read-next in var param first)
+      (list (if (string? param) :define :var-define) 
+	    var param 
+	    (maybe-c-number
+	     (let ((token (read-token-string in)))
+	       (if first
+		   (string-append (list->string (list first)) token)
+		   token)))))
     (let* ((var (read-identifier in))
 	   (nc (skip-block-comment in)))
       (cond ((eof-object? nc) ;; it's valid just useless
-	     (list :var-define var #t))
+	     (list :var-define var #f))
 	    ((char=? nc #\linefeed)
-	     (list :var-define var #t))
+	     (list :var-define var #f))
 	    ((char=? nc #\()
-	     (read-next in var (read-until in #\))))
-	    (else (read-next in var #f)))))
+	     (read-next in var (read-until in #\)) #f))
+	    (else (read-next in var #t nc)))))
 
   (define-method handle-keyword ((t (eql :error)) in)
     (let ((msg (get-line in)))
       (error 'preprocess-error msg)))
+  (define-method handle-keyword ((t (eql :line)) in) (get-line in) #f)
 
   (define (read-preprocessor1 in out)
     (define (read-rec sout)
@@ -117,7 +164,7 @@
       (let loop ((c (get-char in)) (nl? #f))
 	(cond ((char=? c #\*)
 	       (let ((nc (get-char in)))
-		 (if (char=? #\/) nl? (loop (get-char in) nl?))))
+		 (if (char=? nc #\/) nl? (loop (get-char in) nl?))))
 	      ((char=? c #\linefeed)
 	       (loop (get-char in) #t))
 	      (else (loop (get-char in) nl?)))))
@@ -135,14 +182,16 @@
 	      ((char=? c #\/)
 	       ;; could be comment
 	       (let ((nc (get-char in)))
-		 (cond ((char=? nc #\/) (get-line in))
+		 (cond ((char=? nc #\/) 
+			(get-line in) (loop (get-char in) appear?))
 		       ((char=? nc #\*) 
 			(when (handle-comment in) 
-			  (loop (get-char in) appear?)))
+			  (loop (get-char in) appear?))
+			#f)
 		       (else
 			(put-char out c)
 			(put-char out nc)
-			(loop (get-char c) #t)))))
+			(loop (get-char in) #t)))))
 	      (else (put-char out c) (loop (get-char in) #t))))))
 
 
@@ -155,11 +204,30 @@
   ;; comment or whitespace but if there is other identifier
   ;; then it is an error.
   (define (c-preprocess in out)
+    (define (add-macro pp)
+      (define (make-macro param&def) 
+	(let ((param (string-split (car param&def) #/\s*,\s*/))
+	      (def   (cadr param&def)))
+	  (list param def)))
+      (when (hashtable-contains? (*macro-table*) (cadr pp))
+	;; should we make this an error or just an warning?
+	(error 'define "multiple definition" pp))
+      (case (car pp)
+	((:define) 
+	 (hashtable-set! (*macro-table*) (cadr pp) (make-macro (cddr pp))))
+	((:var-define)
+	 (if (caddr pp)
+	     (hashtable-set! (*macro-table*) (cadr pp) (cadddr pp))
+	     (hashtable-set! (*macro-table*) (cadr pp) #f)))))
     (let loop ()
       (let ((one-pp (read-preprocessor1 in out)))
-	(cond ((eof-object? one-pp) one-pp)
-	      ((string? one-pp) (put-string out one-pp) (loop))
+	(cond ((not one-pp) (loop)) ;; like #line or so
+	      ((eof-object? one-pp) (*macro-table*))
+	      ((string? one-pp)
+	       ;; TODO preprocess 
+	       (put-string out one-pp) (loop))
 	      (else 
+	       (add-macro one-pp)
 	       ;; TODO convert and store macro
 	       (loop))))))
 
@@ -167,5 +235,6 @@
   (define (make-preprocessor)
     (lambda (in out)
       ;; returns macros
-      (c-preprocess in out)))
+      (parameterize ((*macro-table* (make-string-hashtable)))
+	(hashtable->alist (c-preprocess in out)))))
 )
