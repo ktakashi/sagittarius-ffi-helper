@@ -10,11 +10,12 @@
 
 (define sample-c
 "
-#define Bar 0
+#define Bar 1
 #if Bar
 # /* hoge */ define FOO 0x777
 # define bar(a , b) \\
     do {            \\
+      int a, b;     \\
     } while (0)
 # ifdef FOO
 int foo;
@@ -27,6 +28,11 @@ int bar;
 # error \"ng\"
 #endif
 extern char *message;
+
+bar(i,j);
+bar(k,
+    l);
+int foo[Bar];
 ")
 
 (define (main args)

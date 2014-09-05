@@ -39,6 +39,7 @@
     (import (rnrs)
 	    (sagittarius)
 	    (sagittarius regex)
+	    (sagittarius object)
 	    (srfi :13 strings)
 	    (srfi :14 char-sets)
 	    (srfi :39 parameters)
@@ -308,22 +309,55 @@
 	 (if (caddr pp)
 	     (hashtable-set! (*macro-table*) (cadr pp) (cadddr pp))
 	     (hashtable-set! (*macro-table*) (cadr pp) #f)))))
+    ;; for now it's line oriented...
+    
     (let loop ()
       (let ((one-pp (read-preprocessor1 in out)))
 	(cond ((not one-pp) (loop)) ;; like #line or so
-	      ((eof-object? one-pp) (*macro-table*))
-	      ((string? one-pp)
-	       ;; TODO preprocess 
-	       (put-string out one-pp) (loop))
-	      (else 
-	       (add-macro one-pp)
-	       ;; TODO convert and store macro
-	       (loop))))))
+	      ((eof-object? one-pp))
+	      ((string? one-pp) (put-string out one-pp) (loop))
+	      (else (add-macro one-pp) (loop))))))
 
 
   (define (make-preprocessor)
     (lambda (in out)
+      (define (do-preprocess expr)
+	(define (r1 key)
+	  (regex (string-append "([^a-zA-Z_]*)" key "([^a-zA-Z_]*)")))
+	(define (rn key)
+	  (regex (string-append "([^a-zA-Z_]*)" key "\\s*\\(([^)]+)\\)")))
+	(define (replace-it v)
+	  (lambda (m)
+	    (string-append (m 1) (->string v) (m 2))))
+	(define (do-replace who v)
+	  (lambda (m)
+	    (let ((args (string-split (m 2) #/\s*,\s*/))
+		  (tmpl (car v)))
+	      (unless (= (length args) (length tmpl))
+		(error who (format "invalid arguments for ~a" tmpl) args))
+	      (let loop ((args args) (tmpl tmpl) (r (cadr v)))
+		(if (null? args)
+		    (string-append (m 1) r)
+		    (loop (cdr args) (cdr tmpl)
+			  (regex-replace-all (r1 (car tmpl)) r
+					     (replace-it (car args)))))))))
+	(let loop ((keys (hashtable-keys-list (*macro-table*))) (expr expr)
+		   (nest 0))
+	  (if (or (null? keys) (= nest 1000))
+	      expr
+	      (let ((v (hashtable-ref (*macro-table*) (car keys))))
+		(if (pair? v)
+		    (loop (cdr keys)
+			  (regex-replace-all (rn (car keys))
+					     expr (do-replace (car keys) v))
+			  (+ nest 1))
+		    (loop (cdr keys)
+			  (regex-replace-all (r1 (car keys)) expr (replace-it v))
+			  (+ nest 1)))))))
       ;; returns macros
       (parameterize ((*macro-table* (make-string-hashtable)))
-	(hashtable->alist (c-preprocess in out)))))
+	(let ((s (call-with-string-output-port
+		  (lambda (out) (c-preprocess in out)))))
+	  (put-string out (do-preprocess s)))
+	(hashtable->alist  (*macro-table*)))))
 )
