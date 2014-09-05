@@ -65,7 +65,7 @@ double max(double *a, int n)
 
 int
 main() {
-    char line[MAXLINELEN];
+    char line[128];
     int i, n = 0, mid = 0;
     double sum = 0.0;
     double mean = 0.0;
@@ -79,8 +79,7 @@ main() {
     int array_size = 4096;
 
     double *nums = (double *)malloc(array_size * sizeof(double));
-
-    while (fgets(line, MAXLINELEN, stdin)) {
+    while (fgets(line, 128, stdin)) {
     sum += (nums[n++] = atof(line));
     if (n == array_size) {
         array_size *= 2;

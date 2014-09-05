@@ -40,8 +40,10 @@
 	    (sagittarius control)
 	    (match)
 	    (packrat)
+	    (srfi :13 strings)
 	    (srfi :14 char-sets)
 	    (srfi :39 parameters)
+	    (text parse)
 	    (pp))
 
   ;; operator table
@@ -83,8 +85,11 @@
 			      double else enum extern float for goto if inline 
 			      int long register restrict return short signed
 			      sizeof static struct switch typedef union
+			      wchar_t
 			      unsigned void volatile while _Bool _Complex
-			      _Imaginary))
+			      _Imaginary
+			      ;; for MSVC
+			      __stdcall))
 
   (define *typedefs* (make-parameter '()))
 
@@ -136,48 +141,22 @@
 		  ;; one letter operator must have the same name and kind
 		  (else (values (car token) (car token))))))
 	(define (read-number first second p)
-	  (define (read-int acc p set radix)
-	    (read-char p)			; discards the second letter
-	    (let loop ((acc acc) (c (peek-char p)))
-	      (if (char-set-contains? set c)
-		  (loop (cons c acc) (begin (read-char p) (peek-char p)))
-		  (string->number (list->string (reverse! acc)) radix))))
-	  (define IS (string->char-set "uUlL"))
-	  (define FS (string->char-set "fFlL"))
-	  (define (read-is p int)
-	    (let loop ((c (peek-char p)))
-	      (if (char-set-contains? IS c)
-		  (loop (begin (read-char p) (peek-char p)))
-		  int)))
-	  (define (read-hex p)
-	    (let ((int (read-int '() p char-set:hex-digit 16)))
-	      (read-is p int)))
-
-	  (define (read-octet first p)
-	    (let ((int (read-int (list first) p char-set:digit 8)))
-	      (read-is p int)))
-	  (define (read-float p)
-	    ;; for now
-	    ;; FIXME this is absolutely wrong
-	    (let ((int (read-int '() p char-set:digit 10)))
-	      (string->number (string-append "." (number->string int)) 10)))
-
-	  (cond ((char=? first #\0)
-		 (cond ((char=? second #\x) (read-hex p))
-		       ((char-set-contains? char-set:digit second)
-			(read-octet second p))
-		       ;; one letter
-		       (else (string->number (string first) 10))))
-		((char-set-contains? char-set:digit second)
-		 (let ((int (read-int (list second first) p char-set:digit 10))
-		       (c (peek-char p)))
-		   (cond ((char=? c #\.)
-			  (let ((f (read-float p)))
-			    (+ int f)))
-			 ((char-set-contains? IS c)
-			  (read-is p int))
-			 (else int))))
-		(else (string->number (string first) 10))))
+	  ;; this actually allow to read 0.ulxfF12 or so
+	  (define num-cset (char-set-union char-set:hex-digit
+					   (string->char-set "xuUlLfF.")))
+	  (let ((var (string-trim-right 
+		      (string-append (string first)
+				     (next-token-of 
+				      (lambda (c) 
+					(char-set-contains? num-cset c))
+				      p))
+		      (string->char-set "uUlLfF"))))
+	    (cond ((string-prefix? "0x" var)
+		   (string->number (string-copy var 2) 16))
+		  ((and (> (string-length var) 1) 
+			(char=? #\0 (string-ref var 0)))
+		   (string->number (string-copy var 2) 8))
+		  (else (string->number var)))))
 	(define (position-update token kind old-pos)
 	    (set! pos (update-parse-position pos token))
 	    (values old-pos (cons kind token)))
@@ -209,7 +188,6 @@
 			   (cond ((or (eof-object? x1) (eof-object? y1))
 				  (loop))
 				 ((and (char=? x1 #\*) (char=? y1 #\/))
-				  (read-char p)
 				  (let ((x (read-char p)))
 				    (position-update x x pos)
 				    (loop)))
@@ -460,6 +438,7 @@
 		     ((t <- 'double) t)
 		     ((t <- 'signed) t)
 		     ((t <- 'unsigned) t)
+		     ((t <- 'wchar_t) t)
 		     ((t <- '_Bool) t)
 		     ((t <- '_Complex) t)
 		     ((st <- struct-or-union-specifier) st)
@@ -511,7 +490,8 @@
       (('enum id <- 'identifier) (list 'enum id '())))
 
      (enumerator-list ((e <- enumerator e* <- enumerator-list*) (cons e e*)))
-     (enumerator-list* (('#\, e <- enumerator) e)
+     (enumerator-list* (('#\, e <- enumerator e* <- enumerator-list*) 
+			(cons e e*))
 		       (() '()))
 
      (enumerator 
@@ -522,7 +502,9 @@
 		     ((r <- 'restrict) r)
 		     ((v <- 'volatile) v))
 
-     (function-specifier ((i <- 'inline) i))
+     (function-specifier ((i <- 'inline) i)
+			 ;; MSVC
+			 ((i <- '__stdcall) i))
 
      (declarator ((p <- pointer dd <- direct-declarator) (cons p dd))
 		 ((dd <- direct-declarator) (cons #f dd)))

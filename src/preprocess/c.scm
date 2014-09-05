@@ -385,7 +385,7 @@
     (lambda (in out)
       (define (do-preprocess expr)
 	(define (r1 key)
-	  (regex (string-append "([^a-zA-Z_]*)" key "([^a-zA-Z_]+)")))
+	  (regex (string-append "([^a-zA-Z_]*)" key "([^a-zA-Z0-9_]+)")))
 	(define (rn key)
 	  (regex (string-append "([^a-zA-Z_]*)" key "\\s*\\(([^)]+)\\)")))
 	(define (replace-it who v)
