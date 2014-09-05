@@ -1,4 +1,4 @@
-(add-load-path ".")
+(add-load-path "src")
 (import (rnrs) 
 	(sagittarius)
 	(sagittarius control)
