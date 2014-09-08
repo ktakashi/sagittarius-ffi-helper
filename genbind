@@ -49,7 +49,9 @@
 
 (define (generate-libraries macros defs output)
   (define (constants macros)
-    (pp macros))
+    ;; for now we don't convert C macro to Scheme macro
+    (let ((macros (filter (lambda (m) (not (pair? cdr m))) macros)))
+      (pp macros)))
   (constants macros)
 )
 
