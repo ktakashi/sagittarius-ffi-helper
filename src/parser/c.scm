@@ -400,9 +400,8 @@
 	   (match init
 	     (() 'done)
 	     ((((pointer? name ignore ...) . ignore2) . rest)
-	      (if (hashtable-contains? (*typedefs*) name)
-		  (format (current-error-port) "~a is already defined~%" name)
-		  (format (current-error-port) "typedef ~a ~a~%" (cdr ds) name))
+	      (when (hashtable-contains? (*typedefs*) name)
+		(format (current-error-port) "~a is already defined~%" name))
 	      (hashtable-set! (*typedefs*) name (cons pointer? (cdr ds)))
 	      (loop rest))
 	     ;; FIXME

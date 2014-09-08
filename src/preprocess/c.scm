@@ -137,8 +137,10 @@
 		      (when (char=? nc #\linefeed) (get-char in)))))
 		 (else (put-char out c) (loop))))))))
 
+  ;; TODO flonum
   (define (parse-c-number token)
-    (define (strip-ul token) (string-trim-right token #[ulUL]))
+    (define (strip-ul token)
+      (string-trim-right token #[ulUL]))
     (let ((token (strip-ul token)))
       (cond ((string-prefix? "0x" token)
 	     (string->number (string-copy token 2) 16))
@@ -146,35 +148,36 @@
 	     (string->number (string-copy token 1) 8))
 	    (else (string->number token)))))
   (define (maybe-c-number token)
-    (if (for-all (cs-pred #[0-9a-fxulUL]) (string->list token))
-	(or (parse-c-number token)
-	    token)
-	token))
+    (let ((token (string-trim-both token)))
+      (cond ((for-all (cs-pred #[0-9a-fA-FxulUL-]) (string->list token))
+	     (or (parse-c-number token) token))
+	    ((#/\(([0-9a-fA-FxulUL-]+)\)/ token)
+	     => (lambda (m) (or (parse-c-number (m 1)) token)))
+	    (else token))))
 
   (define-method handle-keyword (t in) (error t "not supported yet"))
 
   (define-method handle-keyword ((t (eql :define)) in)
-    (define (read-next in var param first)
+    (define (read-next in var param)
       (list (if (string? param) :define :var-define) 
 	    var param 
 	    (maybe-c-number
 	     (let ((token (read-token-string in)))
-	       (if first
-		   (string-append (list->string (list first)) token)
-		   token)))))
+	       token))))
     (let* ((var (read-identifier in))
-	   (nc (skip-block-comment in)))
+	   (nc (peek-char in)))
       (cond ((eof-object? nc) ;; it's valid just useless
 	     (list :var-define var #f))
 	    ((char=? nc #\linefeed)
 	     (list :var-define var #f))
 	    ((char=? nc #\()
-	     (read-next in var (read-until in #\)) #f))
+	     (get-char in)
+	     (read-next in var (read-until in #\))))
 	    ((and (char=? nc #\\) (char=? #\linefeed (peek-char in)))
 	     (get-char in)
 	     ;; don't use number in multiline...
 	     (list :var-define var #t (read-token-string in)))
-	    (else (read-next in var #t nc)))))
+	    (else (read-next in var #t)))))
 
   (define-method handle-keyword ((t (eql :error)) in)
     (error 'preprocess-error (get-line in)))

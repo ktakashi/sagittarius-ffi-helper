@@ -13,6 +13,7 @@
 	(prefix (parser c) c:)
 	(prefix (preprocess c) c:)
 	(getopt)
+	(match)
 	(pp))
 
 (define preprocessor (make-preprocessor 'c))
@@ -46,6 +47,25 @@
     ("__out_xcount"        . (("x") ""))))
 
 
+(define (generate-libraries macros defs output)
+  (define (constants macros)
+    (pp macros))
+  (constants macros)
+)
+
+
+(define (usage)
+  (print "genbind [Options] file")
+  (print "  Options:")
+  (print "   -o,--output     Top most output library name.")
+  (print "      This creates maximum 4 librarys with following structure")
+  (print "        - output")
+  (print "            - constant")
+  (print "            - types")
+  (print "            - functions")
+  (print "      Top most output library must be specified. e.g. (ffi name)")
+  (exit -1))
+
 (define (main args)
   (define (parse-def define)
     (cond ((#/(\w+?)=(.+)/ define) =>
@@ -67,6 +87,7 @@
        (defines  (#\D "define") * '())
        (types    (#\t "typedefs") * '())
        (expand   (#\E "expand") #f #f)
+       (output   (#\o "output") #t (usage))
        . rest)
     (when (null? rest) (usage))
     (let-values (((dir base ext) (decompose-path (car rest)))
@@ -77,15 +98,13 @@
 		       (c:*definitions* (append predefined
 						(map parse-def defines))))
 	  (unwind-protect
-	      (begin
-		(let ((macros (call-with-input-file (car rest)
-				(cut preprocessor <> out)))
-		      (typedefs (->hashtable types)))
-		  (flush-output-port out)
-		  (let ((defs (call-with-input-file path 
-				(cut parser <> typedefs))))
-		    (pp defs)
-		    )))
+	      (let ((macros (call-with-input-file (car rest)
+			      (cut preprocessor <> out)))
+		    (typedefs (->hashtable types)))
+		(flush-output-port out)
+		(let ((defs (call-with-input-file path 
+			      (cut parser <> typedefs))))
+		  (generate-libraries macros defs output)))
 	    (close-output-port out)
 	    (if expand 
 		(rename-file path (string-append base "." ext))
