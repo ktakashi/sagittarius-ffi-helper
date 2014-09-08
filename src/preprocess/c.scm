@@ -408,7 +408,7 @@
       (regex (string-append "([^a-zA-Z0-9_]+)" key "\\s*\\(([^)]+)\\)")))
     (define (replace-it who v)
       (lambda (m)
-	(string-append (m 1) (->string v) (m 2))))
+	(string-append (m 1) (if v (->string v) "") (m 2))))
     (define (do-replace who v)
       (lambda (m)
 	(let ((args (string-split (m 2) #/\s*,\s*/))

@@ -465,7 +465,7 @@
 				  '#\{ decl <- struct-declaration-list '#\})
 				 (list st #f decl))
 				((st <- struct-or-union id <- 'identifier)
-				 (list st #f '())))
+				 (list st id '())))
      (struct-or-union ((s <- 'struct) s)
 		      ((u <- 'union)  u))
 
