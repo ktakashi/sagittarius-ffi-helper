@@ -21,7 +21,29 @@
 ;; MSVC supports weird annotation
 ;; and some header is smart enough to detect own platform so that
 ;; sometime workaround for this won't work. so define it.
-;; (define )
+(define predefined
+  `(("__stdcall"           . "")
+    ("__in"                . "")
+    ("__out"               . "")
+    ("__in_opt"            . "")
+    ("__out_opt"           . "")
+    ("__inout_opt"         . "")
+    ("__deref_out"         . "")
+    ("__deref_opt_out"     . "")
+    ("__deref_out_opt"     . "")
+    ("__in_ecount"         . (("x") ""))
+    ("__out_ecount"        . (("x") ""))
+    ("__inout_ecount"      . (("x") ""))
+    ("__in_ecount_opt"     . (("x") ""))
+    ("__out_ecount_opt"    . (("x") ""))
+    ("__inout_ecount_opt"  . (("x") ""))
+    ("__in_bcount"         . (("x") ""))
+    ("__out_bcount"        . (("x") ""))
+    ("__inout_bcount"      . (("x") ""))
+    ("__in_bcount_opt"     . (("x") ""))
+    ("__out_bcount_opt"    . (("x") ""))
+    ("__inout_bcount_opt"  . (("x") ""))
+    ("__out_xcount"        . (("x") ""))))
 
 
 (define (main args)
@@ -29,11 +51,17 @@
     (cond ((#/(\w+?)=(.+)/ define) =>
 	   (lambda (m) (cons (m 1) (m 2))))
 	  (else (cons define ""))))
-  (define (do-parse in)
+  (define (do-parser in typedefs)
     (let loop ((r '()))
       (if (eof-object? (peek-char in))
 	  (reverse! r)
-	  (loop (cons (parser in) r)))))
+	  (let ((v (parser in typedefs)))
+	    (pp v)
+	    (loop (cons v r))))))
+  (define (->hashtable types)
+    (let ((tab (make-eq-hashtable)))
+      (for-each (lambda (t) (hashtable-set! tab (string->symbol t) #t)) types)
+      tab))
   (with-args (cdr args)
       ((includes (#\I "include") * '())
        (defines  (#\D "define") * '())
@@ -46,17 +74,18 @@
       (let ((out (transcoded-port out (native-transcoder))))
 	(parameterize ((*includes* includes)
 		       (*current-path* dir)
-		       
-		       (c:*definitions* (map parse-def defines)))
+		       (c:*definitions* (append predefined
+						(map parse-def defines))))
 	  (unwind-protect
 	      (begin
 		(let ((macros (call-with-input-file (car rest)
-				(cut preprocessor <> out))))
+				(cut preprocessor <> out)))
+		      (typedefs (->hashtable types)))
 		  (flush-output-port out)
-		  (parameterize ((c:*typedefs* (map string->symbol types)))
-		    (let ((defs (call-with-input-file path (cut parser <>))))
-		      ;;(pp defs)
-		      ))))
+		  (let ((defs (call-with-input-file path 
+				(cut parser <> typedefs))))
+		    (pp defs)
+		    )))
 	    (close-output-port out)
 	    (if expand 
 		(rename-file path (string-append base "." ext))

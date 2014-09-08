@@ -31,10 +31,10 @@
 ;; References:
 ;;   http://www.lysator.liu.se/c/ANSI-C-grammar-y.html
 ;;   http://www.lysator.liu.se/c/ANSI-C-grammar-l.html
+#!read-macro=char-set
 (library (parser c)
     (export make-parser
-	    make-condition-parser
-	    *typedefs*)
+	    make-condition-parser)
     (import (rnrs)
 	    (sagittarius)
 	    (sagittarius control)
@@ -87,11 +87,9 @@
 			      sizeof static struct switch typedef union
 			      wchar_t
 			      unsigned void volatile while _Bool _Complex
-			      _Imaginary
-			      ;; for MSVC
-			      __stdcall))
+			      _Imaginary))
 
-  (define *typedefs* (make-parameter '()))
+  (define *typedefs* (make-parameter #f))
 
   ;; TODO generator looses position information
   ;; when handling comment.
@@ -158,8 +156,8 @@
 		   (string->number (string-copy var 2) 8))
 		  (else (string->number var)))))
 	(define (position-update token kind old-pos)
-	    (set! pos (update-parse-position pos token))
-	    (values old-pos (cons kind token)))
+	  (set! pos (update-parse-position pos token))
+	  (values old-pos (cons kind token)))
 	(let loop ()
 	  (if ateof
 	      (values pos #f)
@@ -233,7 +231,7 @@
      (begin
        (define (typedef-name results)
 	 (let ((v (parse-results-token-value results)))
-	   (if (memq v (*typedefs*))
+	   (if (hashtable-contains? (*typedefs*) v)
 	       (make-result v (parse-results-next results))
 	       (make-expected-result (parse-results-position results)
 				     'typedef-name))))
@@ -257,8 +255,10 @@
       ((o <- 'dec-op e* <- postfix-expression*) (cons o e*))
       (('ptr-op id <- 'identifier e* <- postfix-expression*) (cons id e*))
       ;; do we need this?
+      #;
       (('#\( t <- type-name '#\) '#\{ i* <- initializer-list '#\})
        (cons t i*))
+      #;
       (('#\( t <- type-name '#\) '#\{ i* <- initializer-list '#\, '#\})
        (cons t i*))
       (() '()))
@@ -396,23 +396,34 @@
       ((ds <- declaration-specifiers init <- init-declarator-list '#\;)
        ;; store typedeffed names so that it can continue.
        (when (and (pair? ds) (eq? (car ds) 'typedef))
-	 (match init
-	   ((((pointer? name) . rest))
-	    (*typedefs* (cons name (*typedefs*))))
-	   ;; FIXME
-	   (_ (display "unknown format: " (current-error-port))
-	      (display init (current-error-port)) 
-	      (newline (current-error-port)))))
+	 (let loop ((init init))
+	   (match init
+	     (() 'done)
+	     ((((pointer? name ignore ...) . ignore2) . rest)
+	      (if (hashtable-contains? (*typedefs*) name)
+		  (format (current-error-port) "~a is already defined~%" name)
+		  (format (current-error-port) "typedef ~a ~a~%" (cdr ds) name))
+	      (hashtable-set! (*typedefs*) name (cons pointer? (cdr ds)))
+	      (loop rest))
+	     ;; FIXME
+	     (_ (display "unknown format: " (current-error-port))
+		(display init (current-error-port)) 
+		(newline (current-error-port))))))
        (list ds init))
       ((ds <- declaration-specifiers '#\;) (list ds #f)))
 
      (declaration-specifiers 
       ((st <- storage-class-specifier ds <- declaration-specifiers)
        (cons st ds))
+      ((st <- storage-class-specifier) (list st))
       ((t <- type-specifier ds <- declaration-specifiers) (cons t ds))
+      ((t <- type-specifier) (list t))
       ((t <- type-qualifier ds <- declaration-specifiers) (cons t ds))
-      ((fs <- function-specifier ds <- declaration-specifiers) (cons fs ds))
-      (() '()))
+      ((t <- type-qualifier) (list t))
+      ;; what's this?
+      ;;((fs <- function-specifier ds <- declaration-specifiers) (cons fs ds))
+      ;;(() '())
+      )
      
      (init-declarator-list ((i <- init-declarator i* <- init-declarator-list*)
 			    (cons i i*)))
@@ -448,13 +459,12 @@
 		     )
 
      (struct-or-union-specifier ((st <- struct-or-union
-				  id <- 'identifier '#\{ 
-				  decl <- struct-declaration-list
-				  '#\}) (list st id decl))
+				  id <- 'identifier 
+				  '#\{ decl <- struct-declaration-list '#\})
+				 (list st id decl))
 				((st <- struct-or-union
-				  '#\{
-				  decl <- struct-declaration-list
-				  '#\}) (list st #f decl))
+				  '#\{ decl <- struct-declaration-list '#\})
+				 (list st #f decl))
 				((st <- struct-or-union id <- 'identifier)
 				 (list st #f '())))
      (struct-or-union ((s <- 'struct) s)
@@ -470,11 +480,14 @@
 
      (specifier-qualifier-list
       ((ts <- type-specifier sql <- specifier-qualifier-list) (cons ts sql))
+      ((ts <- type-specifier) (list ts))
       ((tq <- type-qualifier sql <- specifier-qualifier-list) (cons tq sql))
-      (() '()))
+      ((tq <- type-qualifier) (list tq))
+      )
      
      (struct-declarator-list
-      ((s <- struct-declarator s* <- struct-declarator-list*) (cons s s*)))
+      ((s <- struct-declarator s* <- struct-declarator-list*) (cons s s*))
+      (() '()))
      (struct-declarator-list* (('#\, s <- struct-declarator) s)
 			      (() '()))
 
@@ -502,11 +515,9 @@
 		     ((r <- 'restrict) r)
 		     ((v <- 'volatile) v))
 
-     (function-specifier ((i <- 'inline) i)
-			 ;; MSVC
-			 ((i <- '__stdcall) i))
+     (function-specifier ((i <- 'inline) i))
 
-     (declarator ((p <- pointer dd <- direct-declarator) (cons p dd))
+     (declarator ((p <- pointer dd <- direct-declarator)(cons p dd))
 		 ((dd <- direct-declarator) (cons #f dd)))
 
      (direct-declarator ((id <- 'identifier d* <- direct-declarator*) 
@@ -677,7 +688,7 @@
 			(() '()))
 
      (external-declaration ((fd <- function-definition) fd)
-			   ((dc <- declaration) dc))
+			   ((dc <- declaration)         dc))
 
      ;; should we only use C99 or better support older one?
      (function-definition ((dspec <- declaration-specifiers
@@ -707,11 +718,10 @@
 				   (parse-error-position e)))
 		       (expected ,(parse-error-expected e))
 		       (message ,(parse-error-messages e))))))))
-    (lambda maybe-port 
-      (parameterize ((*typedefs* (*typedefs*)))
-	(read-c-file (if (pair? maybe-port)
-			 (car maybe-port)
-			 (current-input-port))))))
+    (lambda (:optional (port (current-input-port))
+		       (typedefs (make-eq-hashtable)))
+      (parameterize ((*typedefs* typedefs))
+	(read-c-file port))))
 
   (define (make-parser) (%make-parser parser))
   (define (make-condition-parser) (%make-parser condition-parser))
