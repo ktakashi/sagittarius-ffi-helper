@@ -40,6 +40,7 @@ SG_EXPORT void   function1(void);
 SG_EXPORT void * function2(struct st_type1 *st1);
 SG_EXPORT int    function3(union  un_type1 *un1);
 SG_EXPORT void * function4(       st_type2 *st1);
+SG_EXPORT void * function5(       st_type2 *st1, int v, char *cs);
 SG_EXPORT int    fprintf(FILE *file, const char * fmt, ...);
 
 SG_CDECL_END

@@ -196,9 +196,11 @@
       ;; at sorting by name would make a bit organised. (i hope)
       (filter-map gen-define-constant 
 		  (list-sort (^(a b) (string<? (car a) (car b))) macros))))
-
+  ;; use as set
+  (define exports (make-eq-hashtable))
   (define (typedef&structs defs)
     (define counter `((union . 0) (struct . 0)))
+    (define anon-prefix "anon-")
     (define (resolve-ops expr)
       (let loop ((expr expr))
 	(cond ((null? expr) 0)
@@ -229,7 +231,8 @@
     (define (liftup-anonymous members)
       (define (gen-anonymous-name type)
 	(let* ((slot (assq type counter))
-	       (name (string->symbol (format "anon-~a.~a" type (cdr slot)))))
+	       (name (string->symbol (format "~a~a.~a" anon-prefix 
+					     type (cdr slot)))))
 	  (set-cdr! slot (+ (cdr slot) 1))
 	  name))
       (define (liftup-anonymous member)
@@ -259,22 +262,49 @@
 				       ,@defnames)))))
 	((('typedef name) (((pointer? defname) . ignore) rest ...))
 	 (let ((defname (symbol->scheme-name defname)))
+	   (hashtable-set! exports defname #t)
 	   `(define-c-typedef ,name ,(if pointer? `(* ,defname) defname))))
 	(((((? struct-or-union? x) name members)) rest)
 	 (let-values (((anonymous members) (liftup-anonymous members)))
+	   (let ((name (symbol->scheme-name name)))
+	     (unless (string-prefix? anon-prefix (symbol->string name))
+	       (hashtable-set! exports name #t))
 	   `(begin
 	      ,@(if (null? anonymous) anonymous (cdr anonymous))
 	      (,(string->symbol (format "define-c-~a" x))
-	       ,(symbol->scheme-name name)
-		,@(map parse-member members)))))
+	       ,name
+	       ,@(map parse-member members))))))
 	;; something else
-	(_ (pp def) #f)))
+	(_ #f)))
     (filter-map gen-typedef-struct defs))
-  (print)(print)
+
+  (define (functions defs)
+    (define (gen-define def)
+      (define (arg-type type)
+	(match type
+	  ;; for void, we need special treatment
+	  (((type)) (if (eq? 'void type) #f type))
+	  (((type) pointer? name)
+	   (if pointer? 'void* type))))
+      (match def
+	((((? symbol? ret)) (((p? name arg-types ...) . ignore)))
+	 (let ((sname (symbol->scheme-name name)))
+	   `(define ,sname (c-function shared-lib ,(if p? 'void* ret)
+				       ,name 
+				       ;; in case of (void)
+				       ;; FIXME even though (void, int)
+				       ;; is invalid this emits (int)
+				       ,(filter-map arg-type arg-types)))))
+	(_ #;(pp def) #f)))
+
+    (filter-map gen-define defs))
   (let ((consts (constants macros))
-	(types  (typedef&structs  defs)))
+	(types  (typedef&structs  defs))
+	(funcs  (functions defs)))
+    ;; now we need to make this as a library
     (pp consts)
-    (pp types)))
+    (pp types)
+    (pp funcs)))
 
 
 (define (usage)
@@ -312,6 +342,7 @@
        (expand   (#\E "expand") #f #f)
        (output   (#\o "output") #t (usage))
        (convert  (#\c "convert") #t "scheme")
+       (dump     (#\d "dump")    #t #f)
        . rest)
     (when (null? rest) (usage))
     (let-values (((dir base ext) (decompose-path (car rest)))
@@ -329,6 +360,9 @@
 		(flush-output-port out)
 		(let ((defs (call-with-input-file path 
 			      (cut parser <> typedefs))))
+		  (when dump
+		    (when (file-exists? dump) (delete-file dump))
+		    (call-with-output-file dump (cut pp defs <>)))
 		  (generate-libraries macros defs output)))
 	    (close-output-port out)
 	    (if expand 
