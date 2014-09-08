@@ -36,7 +36,9 @@
 #!read-macro=sagittarius/regex
 (library (preprocess c)
     (export make-preprocessor
-	    *definitions*)
+	    *definitions*
+	    parse-c-number
+	    maybe-c-number)
     (import (rename (rnrs) (error rnrs:error))
 	    (sagittarius)
 	    (sagittarius regex)
@@ -445,5 +447,16 @@
 	(let ((s (call-with-string-output-port
 		  (lambda (out) (c-preprocess in out)))))
 	  (put-string out (do-preprocess s)))
+	;; remove predefined thing
+	(for-each (lambda (d)
+		    (hashtable-delete! (*macro-table*) (car d)))
+		  (*definitions*))
+	;; resolve rename definition
+	(hashtable-for-each
+	 (lambda (k v)
+	   (when (and (string? v) (hashtable-contains? (*macro-table*) v))
+	     (hashtable-set! (*macro-table*) k
+			     (hashtable-ref (*macro-table*) v))))
+	 (*macro-table*))
 	(hashtable->alist  (*macro-table*)))))
 )
