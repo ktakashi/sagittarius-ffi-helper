@@ -31,8 +31,28 @@ typedef struct st_type2_rec
     struct st_type1 st1;
     union  un_type1 un1;
   };
+  union {
+    struct st_type1 st1;
+    union  un_type1 un1;
+  } anon_u1;
   word n;
 } st_type2, *pst_type2;
+
+typedef enum {
+  ITEM1,
+  ITEM2
+} enum1;
+
+enum status {
+  STATUS1,
+  STATUS2 = 3
+};
+
+/* anonymous */
+enum {
+  ANON1 = 2,
+  ANON2
+};
 
 SG_CDECL_BEGIN
 

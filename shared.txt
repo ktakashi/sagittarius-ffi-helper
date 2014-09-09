@@ -1,0 +1,5 @@
+;; -*- mode:scheme; coding:utf-8 -*-
+(cond-expand
+ (windows "foo.dll")
+ (mac     "foo.dynlib")
+ (else "foo.so"))
