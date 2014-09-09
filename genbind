@@ -24,6 +24,7 @@
 (define *converion-type* (make-parameter #f))
 (define *shared-object* (make-parameter #f))
 (define *typedefs*      (make-parameter #f))
+(define *generated*      (make-parameter #f))
 (define preprocessor (make-preprocessor 'c))
 (define parser (make-parser 'c))
 
@@ -383,7 +384,7 @@
 
     ;; now we need to make this as a library
     ;; create directory
-    (let ((base-path (apply build-path* +generated+ (map ->path top-library))))
+    (let ((base-path (apply build-path* (*generated*) (map ->path top-library))))
       (define (generate-file name export import defs :optional (top? #f))
 	(let1 file (if top?
 		       (string-append base-path ".scm")
@@ -450,6 +451,7 @@
        (output   (#\o "output")  #t (usage))
        (convert  (#\c "convert") #t "scheme")
        (dump     (#\d "dump")    #t #f)
+       (dest     (#\O "output-dir") #t +generated+)
        (shared-file (#\s "shared") #t (usage))
        . rest)
     (when (null? rest) (usage))
@@ -464,7 +466,8 @@
 		       (*converion-type* (string->symbol convert))
 		       (*shared-object* shared-file)
 		       ;; keep intace for later
-		       (*typedefs* (->hashtable types)))
+		       (*typedefs* (->hashtable types))
+		       (*generated* dest))
 	  (unwind-protect
 	      (let ((macros (call-with-input-file (car rest)
 			      (cut preprocessor <> out)))
